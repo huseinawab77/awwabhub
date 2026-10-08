@@ -1,25 +1,25 @@
 import { useNavigate } from "@tanstack/react-router";
 import type { User } from "@supabase/supabase-js";
-import { ExternalLink } from "lucide-react";
 import { AwwabCat } from "@/components/branding/AwwabCat";
 import { useLang, useT } from "@/lib/awwab/i18n";
-import { greetingPart, reminderFor } from "@/lib/awwab/reminders";
+import { greetingPart, quoteFor, type OpeningSlot } from "@/lib/awwab/reminders";
 import { markOpeningSeen } from "@/lib/awwab/store";
 import { fromKey } from "@/lib/awwab/dates";
 
-/** Once-per-day grounding screen. Only writes lastOpeningDate; never touches tracking or scores. */
-export function DailyOpening({ user, today }: { user: User; today: string }) {
+/** Grounding screen, up to three times per day (morning/afternoon/evening). Only writes
+ * lastOpeningDate/lastOpeningSlot; never touches tracking or scores. */
+export function DailyOpening({ user, today, slot }: { user: User; today: string; slot: OpeningSlot }) {
   const t = useT();
   const lang = useLang();
   const navigate = useNavigate();
-  const r = reminderFor(today);
+  const q = quoteFor(today, slot);
   const rawName = user.user_metadata?.["display_name"] ?? user.user_metadata?.["full_name"] ?? user.user_metadata?.["name"];
   const name = typeof rawName === "string" && rawName.trim() ? rawName.trim().split(/\s+/)[0] : "";
   const hello = t(`op.${greetingPart(new Date().getHours())}`) + (name ? `, ${name}` : "") + ".";
   const date = fromKey(today).toLocaleDateString(lang === "id" ? "id-ID" : "en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
 
   const begin = () => {
-    markOpeningSeen(today);
+    markOpeningSeen(today, slot);
     navigate({ to: "/home", replace: true });
   };
 
@@ -30,24 +30,16 @@ export function DailyOpening({ user, today }: { user: User; today: string }) {
         <p className="text-caption mt-4">{date}</p>
         <h1 className="text-h1 mt-2">{hello}</h1>
 
-        {r ? (
-          <section className="mt-8 rounded-2xl border bg-background/60 p-6 text-left sm:p-8" aria-label={r.reference}>
-            <p className="text-caption">{r.type === "quran" ? t("op.quran") : `${t("op.hadith")} · ${t("op.summary")}`} · {lang === "id" ? r.themeId : r.themeEn}</p>
-            {r.arabicText && (
-              <p lang="ar" dir="rtl" className="mt-4 text-right font-serif text-2xl leading-loose">{r.arabicText}</p>
-            )}
+        {q ? (
+          <section className="mt-8 rounded-2xl border bg-background/60 p-6 text-left sm:p-8" aria-label={q.author}>
+            <p className="text-caption">{t("op.quote")} · {lang === "id" ? q.themeId : q.themeEn}</p>
             <blockquote className="font-display mt-4 text-lg leading-relaxed">
-              “{lang === "id" ? r.translationId : r.translationEn}”
+              “{lang === "id" ? q.textId : q.textEn}”
             </blockquote>
-            <p className="mt-4 text-sm font-semibold">
-              <a href={r.sourceUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 underline-offset-4 hover:underline">
-                {r.reference} <ExternalLink className="h-3.5 w-3.5" aria-label={t("op.openSource")} />
-              </a>
-            </p>
-            {r.type === "quran" && <p className="text-xs text-muted-foreground">{lang === "id" ? t("op.trId") : t("op.trEn")}</p>}
+            <p className="mt-4 text-sm font-semibold">— {q.author}</p>
             <div className="mt-6 border-t pt-4">
               <p className="text-caption">{t("op.reflection")}</p>
-              <p className="mt-1 text-muted-foreground">{lang === "id" ? r.reflectionId : r.reflectionEn}</p>
+              <p className="mt-1 text-muted-foreground">{lang === "id" ? q.reflectionId : q.reflectionEn}</p>
             </div>
           </section>
         ) : (
