@@ -1,32 +1,39 @@
-import data from "./reminders.data.json";
+import data from "./quotes.data.json";
 
-/** Daily Islamic Opening content. Qur'an text and translations come from Quran.com sources
- * (Arabic: Uthmani; ID: Kemenag RI; EN: Saheeh International). Hadith entries show a meaning
- * summary with a Sunnah.com reference; Arabic is omitted when not verified. */
-export interface DailyReminder {
+/** Daily Opening quotes: famous words from great figures — scholars, scientists, and leaders.
+ * The Opening shows up to three times per day (morning / afternoon / evening), each with a
+ * different quote chosen deterministically from the local date and the opening slot. */
+export interface FamousQuote {
   id: string;
-  dayOfMonth: number;
-  type: "quran" | "hadith";
-  arabicText: string | null;
-  translationId: string;
-  translationEn: string;
-  source: string;
-  sourceUrl: string;
-  reference: string;
-  authenticity: "quran" | "sahih";
+  textId: string;
+  textEn: string;
+  author: string;
   themeId: string;
   themeEn: string;
   reflectionId: string;
   reflectionEn: string;
 }
 
-export const dailyIslamicReminders = data as DailyReminder[];
+export const famousQuotes = data as FamousQuote[];
 
-/** Deterministic: the reminder for a local YYYY-MM-DD date is slot `day of month`. */
-export function reminderFor(dateKey: string, list: DailyReminder[] = dailyIslamicReminders): DailyReminder | null {
+/** Three openings per day: 0 = morning, 1 = afternoon, 2 = evening. */
+export type OpeningSlot = 0 | 1 | 2;
+export function openingSlot(hour: number): OpeningSlot {
+  if (hour < 12) return 0;
+  if (hour < 18) return 1;
+  return 2;
+}
+
+/** Deterministic: local date + slot pick the quote; the pool cycles without repeating within a day. */
+export function quoteFor(dateKey: string, slot: OpeningSlot, list: FamousQuote[] = famousQuotes): FamousQuote | null {
+  if (!list.length) return null;
   const day = Number(dateKey.slice(8, 10));
-  const r = list[day - 1];
-  return r && r.dayOfMonth === day && r.translationId && r.reference ? r : null;
+  return list[((day - 1) * 3 + slot) % list.length];
+}
+
+/** The Opening is due when it has not been seen today, or when a later slot has begun. */
+export function openingDue(lastDate: string | null, lastSlot: number, today: string, slot: OpeningSlot): boolean {
+  return lastDate !== today || lastSlot < slot;
 }
 
 export type GreetingPart = "morning" | "afternoon" | "evening";
