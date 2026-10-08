@@ -156,12 +156,14 @@ export interface AppState {
   plannerItems: PlannerItem[];
   routines: Routine[];
   routineExceptions: RoutineException[];
-  /** Local YYYY-MM-DD of the last Daily Opening seen; never affects scores. */
+  /** Local YYYY-MM-DD of the last Daily Opening seen; lastOpeningSlot (0-2, -1 = none) tracks
+   * which of the day's three openings (morning/afternoon/evening) was last seen. Never affects scores. */
   lastOpeningDate: string | null;
+  lastOpeningSlot: number;
 }
 
 const KEY = "awwab:v1";
-const EMPTY: AppState = { version: 1, entries: {}, goals: [], projects: [], milestones: [], reviews: [], habits: systemHabits(), plannerItems: [], routines: [], routineExceptions: [], lastOpeningDate: null };
+const EMPTY: AppState = { version: 1, entries: {}, goals: [], projects: [], milestones: [], reviews: [], habits: systemHabits(), plannerItems: [], routines: [], routineExceptions: [], lastOpeningDate: null, lastOpeningSlot: -1 };
 
 const arr = <X>(x: unknown): X[] => (Array.isArray(x) ? (x as X[]) : []);
 const validHabit = (h: Habit) => !!h && typeof h.id === "string" && Array.isArray(h.versions) && h.versions.length > 0 && h.versions.every((v) => isDomainId(v.domain));
@@ -185,6 +187,8 @@ function parseState(p: any): AppState {
     routines: arr<Routine>(p?.routines).filter((x) => !!x && typeof x.id === "string" && typeof x.startDate === "string").map((r) => ({ ...r, daysOfWeek: arr<number>(r.daysOfWeek), pauses: arr(r.pauses), intervalWeeks: r.intervalWeeks || 1 })),
     routineExceptions: arr<RoutineException>(p?.routineExceptions).filter((x) => !!x && typeof x.routineId === "string"),
     lastOpeningDate: typeof p?.lastOpeningDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(p.lastOpeningDate) ? p.lastOpeningDate : null,
+    // States saved before the 3×-per-day change only had a date; treat that day as fully seen so nothing re-opens today.
+    lastOpeningSlot: typeof p?.lastOpeningSlot === "number" && p.lastOpeningSlot >= -1 && p.lastOpeningSlot <= 2 ? p.lastOpeningSlot : (p?.lastOpeningDate ? 2 : -1),
   };
 }
 
@@ -537,8 +541,10 @@ export function addOccurrencesToPlanner(occ: { routine: Routine; title?: string;
 }
 
 // ---------- Daily Opening ----------
-export function markOpeningSeen(date: string) {
+/** Marks the opening seen for `date` at `slot` (0-2). Later slots on the same day still open. */
+export function markOpeningSeen(date: string, slot: number) {
   const s = getState();
-  if (s.lastOpeningDate === date) return;
-  commit({ ...s, lastOpeningDate: date });
+  const prevSlot = s.lastOpeningDate === date ? s.lastOpeningSlot : -1;
+  if (prevSlot >= slot) return;
+  commit({ ...s, lastOpeningDate: date, lastOpeningSlot: slot });
 }

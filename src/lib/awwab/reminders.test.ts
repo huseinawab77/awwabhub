@@ -1,23 +1,41 @@
 import { describe, expect, it } from "vitest";
-import { dailyIslamicReminders, greetingPart, reminderFor } from "./reminders";
+import { famousQuotes, greetingPart, openingDue, openingSlot, quoteFor } from "./reminders";
 
-describe("daily reminders", () => {
-  it("has 31 valid slots", () => {
-    expect(dailyIslamicReminders).toHaveLength(31);
-    dailyIslamicReminders.forEach((r, i) => {
-      expect(r.dayOfMonth).toBe(i + 1);
-      expect(r.reference && r.sourceUrl && r.translationId && r.translationEn && r.reflectionId && r.reflectionEn).toBeTruthy();
-      if (r.type === "hadith") expect(r.arabicText).toBeNull();
+describe("daily opening quotes", () => {
+  it("has a well-filled pool", () => {
+    expect(famousQuotes.length).toBeGreaterThanOrEqual(45);
+    famousQuotes.forEach((q) => {
+      expect(q.textId && q.textEn && q.author && q.reflectionId && q.reflectionEn).toBeTruthy();
     });
   });
-  it("maps by day of month, same across months", () => {
-    expect(reminderFor("2026-10-08")!.dayOfMonth).toBe(8);
-    expect(reminderFor("2026-11-08")!.id).toBe(reminderFor("2026-10-08")!.id);
-    expect(reminderFor("2028-02-29")!.dayOfMonth).toBe(29);
-    expect(reminderFor("2026-12-31")!.dayOfMonth).toBe(31);
+  it("gives three different quotes for the same day (one per slot)", () => {
+    const day = ["2026-10-08", 0, 1, 2] as const;
+    const a = quoteFor(day[0], 0)!;
+    const b = quoteFor(day[0], 1)!;
+    const c = quoteFor(day[0], 2)!;
+    expect(a.id === b.id || a.id === c.id || b.id === c.id).toBe(false);
   });
-  it("falls back to null on broken config", () => {
-    expect(reminderFor("2026-10-08", [])).toBeNull();
+  it("is deterministic: same date+slot always returns the same quote", () => {
+    expect(quoteFor("2026-10-08", 0)!.id).toBe(quoteFor("2026-11-08", 0)!.id);
+    expect(quoteFor("2026-10-08", 2)!.id).toBe(quoteFor("2027-10-08", 2)!.id);
+  });
+  it("falls back to null on an empty pool", () => {
+    expect(quoteFor("2026-10-08", 0, [])).toBeNull();
+  });
+  it("opens at most three times a day: due when unseen today or a later slot has begun", () => {
+    expect(openingDue(null, -1, "2026-10-08", 0)).toBe(true);
+    expect(openingDue("2026-10-08", 0, "2026-10-08", 0)).toBe(false); // same slot already seen
+    expect(openingDue("2026-10-08", 0, "2026-10-08", 1)).toBe(true); // afternoon due after morning
+    expect(openingDue("2026-10-08", 2, "2026-10-08", 1)).toBe(false); // evening already seen
+    expect(openingDue("2026-10-07", 2, "2026-10-08", 0)).toBe(true); // new day resets
+  });
+  it("maps hour to opening slot", () => {
+    expect(openingSlot(5)).toBe(0);
+    expect(openingSlot(11)).toBe(0);
+    expect(openingSlot(12)).toBe(1);
+    expect(openingSlot(17)).toBe(1);
+    expect(openingSlot(18)).toBe(2);
+    expect(openingSlot(4)).toBe(0); // small hours count as the morning opening
   });
   it("greets by local hour", () => {
     expect(greetingPart(5)).toBe("morning");
