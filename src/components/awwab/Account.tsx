@@ -1,6 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { lovable } from "@/integrations/lovable";
 import { useT, type T } from "@/lib/awwab/i18n";
 import { dismissMigration, importLocalData, startFresh, useAuthUser, useMigration, useSyncStatus } from "@/lib/awwab/sync";
 
@@ -96,9 +95,10 @@ export function AuthForm({ initial = "login" }: { initial?: Mode }) {
   );
 }
 
+// External Supabase project: the Lovable OAuth broker isn't available, so use Supabase's own Google provider.
 export async function signInWithGoogle(t: T): Promise<string | null> {
-  const r = await lovable.auth.signInWithOAuth("google", { redirect_uri: window.location.origin });
-  return r.error ? authError(t, r.error) : null;
+  const { error } = await supabase.auth.signInWithOAuth({ provider: "google", options: { redirectTo: `${window.location.origin}/auth` } });
+  return error ? authError(t, error) : null;
 }
 
 export function SyncBadge() {
