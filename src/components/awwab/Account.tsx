@@ -95,11 +95,6 @@ export function AuthForm({ initial = "login" }: { initial?: Mode }) {
   );
 }
 
-// Google sign-in goes straight through this project's own Supabase (external project; the Lovable broker only serves Lovable Cloud).
-export async function signInWithGoogle(t: T): Promise<string | null> {
-  const { error } = await supabase.auth.signInWithOAuth({ provider: "google", options: { redirectTo: `${window.location.origin}/auth` } });
-  return error ? authError(t, error) : null;
-}
 
 export function SyncBadge() {
   const t = useT();

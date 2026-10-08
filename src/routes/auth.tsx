@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
-import { AuthForm, signInWithGoogle } from "@/components/awwab/Account";
+import { useEffect } from "react";
+import { AuthForm } from "@/components/awwab/Account";
 import { LangSwitch } from "@/components/awwab/ui";
 import { AwwabCat } from "@/components/branding/AwwabCat";
 import { useT } from "@/lib/awwab/i18n";
@@ -16,17 +16,7 @@ function AuthPage() {
   const t = useT();
   const user = useAuthUser();
   const navigate = useNavigate();
-  const [email, setEmail] = useState(false);
-  const [msg, setMsg] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
   useEffect(() => { if (user) navigate({ to: "/home", replace: true }); }, [user, navigate]);
-
-  const google = async () => {
-    setBusy(true); setMsg(null);
-    const err = await signInWithGoogle(t);
-    setBusy(false);
-    if (err) setMsg(err);
-  };
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center px-4 py-10">
@@ -40,17 +30,8 @@ function AuthPage() {
       <div className="surface mt-8 w-full max-w-sm space-y-3 p-6">
         {user === undefined ? (
           <div className="h-24 animate-pulse rounded-lg bg-beige/60" aria-label={t("common.loading")} />
-        ) : email ? (
-          <>
-            <AuthForm />
-            <button type="button" className="btn btn-ghost w-full justify-center text-sm" onClick={() => setEmail(false)}>{t("auth.back")}</button>
-          </>
         ) : (
-          <>
-            <button type="button" className="btn btn-primary w-full justify-center" onClick={google} disabled={busy}>{busy ? t("auth.busy") : t("auth.google")}</button>
-            <button type="button" className="btn btn-soft w-full justify-center" onClick={() => setEmail(true)}>{t("auth.withEmail")}</button>
-            {msg && <p className="text-sm text-muted-foreground" role="status">{msg}</p>}
-          </>
+          <AuthForm />
         )}
       </div>
     </div>
