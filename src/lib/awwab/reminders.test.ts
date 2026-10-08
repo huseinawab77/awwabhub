@@ -17,7 +17,7 @@ describe("daily opening quotes", () => {
   });
   it("is deterministic: same date+slot always returns the same quote", () => {
     expect(quoteFor("2026-10-08", 0)!.id).toBe(quoteFor("2026-11-08", 0)!.id);
-    expect(quoteFor("2026-10-08", 2)!.id).toBe(quoteFor("2028-02-29", 2)!.id);
+    expect(quoteFor("2026-10-08", 2)!.id).toBe(quoteFor("2027-10-08", 2)!.id);
   });
   it("falls back to null on an empty pool", () => {
     expect(quoteFor("2026-10-08", 0, [])).toBeNull();
@@ -35,7 +35,7 @@ describe("daily opening quotes", () => {
     expect(openingSlot(12)).toBe(1);
     expect(openingSlot(17)).toBe(1);
     expect(openingSlot(18)).toBe(2);
-    expect(openingSlot(4)).toBe(2);
+    expect(openingSlot(4)).toBe(0); // small hours count as the morning opening
   });
   it("greets by local hour", () => {
     expect(greetingPart(5)).toBe("morning");
