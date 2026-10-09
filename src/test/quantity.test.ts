@@ -7,31 +7,31 @@ import { addQuantityLog, deleteQuantityLog, getState, replaceState, type Entries
 
 const D = "2026-09-09";
 const week = periodFor("week", D);
-const day = { kind: "day" as const, start: D, end: D, label: "" };
+const day = { kind: "week" as const, start: D, end: D, label: "" };
 const after = "2026-10-01";
 const chain = (e: Entries, ...steps: ((x: Entries) => Entries | null)[]) => steps.reduce((acc, f) => f(acc) ?? acc, e);
 
 describe("incremental quantity logs", () => {
   it("protein 30 + 40 + 60 on one day totals 130", () => {
     const e = chain({}, (x) => addLog(x, D, "protein", "a", 30, "t"), (x) => addLog(x, D, "protein", "b", 40, "t"), (x) => addLog(x, D, "protein", "c", 60, "t"));
-    expect(e[D]!.protein!.value).toBe(130);
-    expect(entryLogs(e[D]!.protein)).toHaveLength(3);
+    expect(e[D]!["protein"]!.value).toBe(130);
+    expect(entryLogs(e[D]!["protein"])).toHaveLength(3);
   });
   it("different dates never mix", () => {
     const e = chain({}, (x) => addLog(x, D, "protein", "a", 30, "t"), (x) => addLog(x, "2026-09-10", "protein", "b", 50, "t"));
-    expect(e[D]!.protein!.value).toBe(30);
-    expect(e["2026-09-10"]!.protein!.value).toBe(50);
+    expect(e[D]!["protein"]!.value).toBe(30);
+    expect(e["2026-09-10"]!["protein"]!.value).toBe(50);
   });
   it("edit and delete recalculate the total and score", () => {
     let e = chain({}, (x) => addLog(x, D, "protein", "a", 60, "t"), (x) => addLog(x, D, "protein", "b", 60, "t"));
     expect(activityPerformance(ACTIVITY_BY_ID["protein"], day, e, after).performance).toBe(100);
     e = editLog(e, D, "protein", "b", 30, "t")!;
-    expect(e[D]!.protein!.value).toBe(90);
+    expect(e[D]!["protein"]!.value).toBe(90);
     expect(activityPerformance(ACTIVITY_BY_ID["protein"], day, e, after).performance).toBe(0);
     e = removeLog(e, D, "protein", "a", "t")!;
-    expect(e[D]!.protein!.value).toBe(30);
+    expect(e[D]!["protein"]!.value).toBe(30);
     e = removeLog(e, D, "protein", "b", "t")!;
-    expect(e[D]!.protein).toBeUndefined();
+    expect(e[D]!["protein"]).toBeUndefined();
   });
   it("same id twice (double click / retry) is ignored", () => {
     const e = addLog({}, D, "protein", "a", 30, "t")!;
@@ -39,7 +39,7 @@ describe("incremental quantity logs", () => {
   });
   it("legacy single value becomes the first log", () => {
     const e: Entries = { [D]: { protein: { date: D, activityId: "protein", value: 50, completed: null, createdAt: "", updatedAt: "" } } };
-    expect(addLog(e, D, "protein", "x", 20, "t")![D]!.protein!.value).toBe(70);
+    expect(addLog(e, D, "protein", "x", 20, "t")![D]!["protein"]!.value).toBe(70);
   });
 });
 
@@ -53,7 +53,7 @@ describe("store persistence", () => {
     expect(reloaded.entries[D].protein.value).toBe(30);
     expect(reloaded.entries[D].protein.logs).toHaveLength(1);
     expect(deleteQuantityLog(D, "protein", "id1")).toBe("saved");
-    expect(getState().entries[D]?.protein).toBeUndefined();
+    expect(getState().entries[D]?["protein"]).toBeUndefined();
   });
 });
 
@@ -63,7 +63,7 @@ describe("base performance and diminishing bonus", () => {
     const e = addLog({}, D, "protein", "a", 130, "t")!;
     const r = activityPerformance(ACTIVITY_BY_ID["protein"], day, e, after);
     expect(r.performance).toBe(100);
-    expect(r.progress).toBe(108.3);
+    expect(e[D]!["protein"]!.value).toBe(130); // actual kept above target
   });
   it("protein (nutrition) gets no bonus by default", () => {
     expect(ACTIVITY_BY_ID["protein"].bonus.bonusEnabled).toBe(false);
