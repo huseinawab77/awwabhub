@@ -269,6 +269,8 @@ export function setEntry(date: string, activityId: string, patch: { value?: numb
     updatedAt: now(),
     ...patch,
   };
+  if (patch.value !== undefined) delete e.logs; // a direct value replaces any delta history
+  else if (prev?.logs) e.logs = prev.logs;
   if (e.value === null && e.completed === null) delete day[activityId];
   else day[activityId] = e;
   commit({ ...s, entries: { ...s.entries, [date]: day } });
