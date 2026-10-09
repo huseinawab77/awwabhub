@@ -33,8 +33,8 @@ export function LifeScoreBlock({ c, prevLabel }: { c: Comparison; prevLabel: str
         <p className="mt-1 text-xs text-muted-foreground">{t("life.coverage", { n: Math.round(c.current.coverage) })}</p>
         {c.current.lifeBonus > 0 && (
           <p className="mt-2 text-xs font-bold text-sage">
-            {t("life.bonus", { n: fmtScore(c.current.lifeBonus) })}
-            <span className="font-normal text-muted-foreground"> · {c.current.bonusSources.map((b) => `${actName(c.current.list.find((a) => a.id === b.activityId)!, t)} +${fmtScore(b.points)}`).join(", ")}</span>
+            {t("life.bonus", { n: c.current.lifeBonus.toLocaleString(locale()) })}
+            <span className="font-normal text-muted-foreground"> · {c.current.bonusSources.map((b) => `${actName(c.current.list.find((a) => a.id === b.activityId)!, t)} +${b.points.toLocaleString(locale())}`).join(", ")}</span>
           </p>
         )}
       </div>
