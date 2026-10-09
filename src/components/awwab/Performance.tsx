@@ -31,6 +31,12 @@ export function LifeScoreBlock({ c, prevLabel }: { c: Comparison; prevLabel: str
           {none ? t("life.noneBody") : c.current.dataState === "LIMITED_DATA" ? t("life.building") : t("life.basedOn", { n: c.current.recordedActivities, total: c.current.list.length })}
         </p>
         <p className="mt-1 text-xs text-muted-foreground">{t("life.coverage", { n: Math.round(c.current.coverage) })}</p>
+        {c.current.lifeBonus > 0 && (
+          <p className="mt-2 text-xs font-bold text-sage">
+            {t("life.bonus", { n: fmtScore(c.current.lifeBonus) })}
+            <span className="font-normal text-muted-foreground"> · {c.current.bonusSources.map((b) => `${actName(c.current.list.find((a) => a.id === b.activityId)!, t)} +${fmtScore(b.points)}`).join(", ")}</span>
+          </p>
+        )}
       </div>
       <CatIllustration state={none ? "steady" : resolveCatState(score)} className="h-28 w-28 shrink-0 sm:h-36 sm:w-36" />
     </section>
