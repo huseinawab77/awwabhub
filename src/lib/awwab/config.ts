@@ -48,7 +48,19 @@ export interface HabitVersion {
   frequency: Frequency;
   weight: number; // within domain (%)
   active: boolean;
+  /** Optional diminishing bonus for useful extra quantity (quantitative only). Missing = system default. */
+  bonusEnabled?: boolean;
+  bonusRate?: number; // fraction of the normal per-unit value each unit above target earns (0.25 = a quarter)
+  bonusCap?: number; // max bonus performance points per activity
 }
+
+export interface BonusConfig { bonusEnabled: boolean; bonusRate: number; bonusCap: number }
+export const NO_BONUS: BonusConfig = { bonusEnabled: false, bonusRate: 0, bonusCap: 0 };
+/** Activities where extra effort is genuinely beneficial. Nutrition/health targets (e.g. protein) stay off. */
+export const SYSTEM_BONUS: Record<string, BonusConfig> = {
+  deep_work: { bonusEnabled: true, bonusRate: 0.25, bonusCap: 20 },
+  daily_steps: { bonusEnabled: true, bonusRate: 0.25, bonusCap: 20 },
+};
 
 export interface Habit {
   id: string; // stable, language-independent; never changes
@@ -72,6 +84,7 @@ export interface Activity {
   frequency: Frequency;
   scoring: ScoringMode;
   weight: number;
+  bonus: BonusConfig;
 }
 
 const EPOCH = "1970-01-01";
@@ -142,7 +155,16 @@ export function toActivity(h: Habit, v: HabitVersion): Activity {
     frequency: v.frequency,
     scoring: scoringFor(v.inputType, v.frequency),
     weight: v.weight,
+    bonus: bonusFor(h, v),
   };
+}
+
+export function bonusFor(h: Pick<Habit, "id" | "isSystem">, v: HabitVersion): BonusConfig {
+  if (v.inputType !== "quantitative") return NO_BONUS;
+  const base = h.isSystem ? (SYSTEM_BONUS[h.id] ?? NO_BONUS) : NO_BONUS;
+  const enabled = v.bonusEnabled ?? base.bonusEnabled;
+  if (!enabled) return NO_BONUS;
+  return { bonusEnabled: true, bonusRate: Math.max(0, v.bonusRate ?? base.bonusRate), bonusCap: Math.max(0, v.bonusCap ?? base.bonusCap) };
 }
 
 /** Habits that are active on `date`, resolved with the configuration in effect then. */

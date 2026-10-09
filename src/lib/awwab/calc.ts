@@ -1,5 +1,5 @@
 // Calculation engine — pure functions. The only place scoring formulas live.
-import { DOMAINS, SYSTEM_HABITS, activitiesAt, inDomain, type Activity, type DomainId, type Habit } from "./config";
+import { DOMAINS, SYSTEM_HABITS, activitiesAt, inDomain, type Activity, type BonusConfig, type DomainId, type Habit } from "./config";
 import { addDays, datesBetween, daysInMonth, eligibleDates, fromKey, periodFor, previousPeriod, type Period } from "./dates";
 import type { Entries } from "./store";
 
@@ -12,7 +12,9 @@ export interface ActivityResult {
   recorded: number; // days with data
   eligible: number; // eligible days in period
   denominator: number; // what actual is compared against
-  performance: number | null; // 0–100, capped
+  performance: number | null; // 0–100, capped (base performance)
+  progress: number | null; // actual / denominator × 100, uncapped — display only
+  bonus: number; // diminishing bonus points (0 when disabled), never part of performance
   status: PerfStatus;
 }
 
@@ -34,10 +36,11 @@ export function activityPerformance(a: Activity, period: Period, entries: Entrie
   const dates = eligibleDates(period, today);
   const base = { activityId: a.id, eligible: dates.length };
   const vals = dates.map((d) => entries[d]?.[a.id]).filter(Boolean);
-  const none = (target: number): ActivityResult => ({ ...base, target, actual: 0, recorded: 0, denominator: 0, performance: null, status: "no_data" });
-  const finish = (actual: number, denominator: number, recorded: number, tgt: number): ActivityResult => {
+  const none = (target: number): ActivityResult => ({ ...base, target, actual: 0, recorded: 0, denominator: 0, performance: null, progress: null, bonus: 0, status: "no_data" });
+  const finish = (actual: number, denominator: number, recorded: number, tgt: number, bonus = 0): ActivityResult => {
     const performance = denominator > 0 ? round1(Math.min(actual / denominator, 1) * 100) : null;
-    return { ...base, target: tgt, actual, recorded, denominator, performance, status: performance === null ? "no_data" : performance >= 100 ? "on_target" : "below_target" };
+    const progress = denominator > 0 ? round1((actual / denominator) * 100) : null;
+    return { ...base, target: tgt, actual, recorded, denominator, performance, progress, bonus, status: performance === null ? "no_data" : performance >= 100 ? "on_target" : "below_target" };
   };
   const ps = fromKey(period.start);
   const periodDays = datesBetween(period.start, period.end).length;
@@ -63,16 +66,27 @@ export function activityPerformance(a: Activity, period: Period, entries: Entrie
       const rec = vals.filter((e) => typeof e!.value === "number");
       if (!rec.length) return none(a.target);
       const ok = rec.filter((e) => (e!.value as number) >= a.target).length;
-      return finish(ok, dates.length, rec.length, a.target);
+      // Bonus: each day's capped bonus, averaged over eligible days (same denominator as performance).
+      const dayBonus = rec.reduce((s, e) => s + quantityBonus(e!.value as number, a.target, a.bonus), 0);
+      return finish(ok, dates.length, rec.length, a.target, dates.length ? round1(dayBonus / dates.length) : 0);
     }
     case "sum": {
       const expected = Math.round(expectedFor(a.target));
       const rec = vals.filter((e) => typeof e!.value === "number");
       if (!rec.length) return none(expected);
       const total = rec.reduce((s, e) => s + (e!.value as number), 0);
-      return finish(total, expected, rec.length, expected);
+      return finish(total, expected, rec.length, expected, quantityBonus(total, expected, a.bonus));
     }
   }
+}
+
+/**
+ * Diminishing bonus: each unit above target earns `bonusRate` × the normal per-unit value
+ * (100 / target points), capped at `bonusCap`. Target 10, rate 0.25: unit 11 adds 2.5 points.
+ */
+export function quantityBonus(actual: number, target: number, cfg: BonusConfig): number {
+  if (!cfg.bonusEnabled || target <= 0 || actual <= target) return 0;
+  return round1(Math.min(((actual - target) / target) * 100 * cfg.bonusRate, cfg.bonusCap));
 }
 
 /**
@@ -95,6 +109,9 @@ export interface PeriodResult {
   recordedActivities: number;
   coverage: number; // 0–100, tracked activity-days / eligible activity-days — informational only
   dataState: DataState;
+  /** Bonus Life Score points shown separately from (never added into) lifeScore. */
+  lifeBonus: number;
+  bonusSources: { activityId: string; bonus: number; points: number }[];
 }
 
 export function computePeriod(period: Period, entries: Entries, today: string, habits: Habit[] = SYSTEM_HABITS): PeriodResult {
@@ -111,7 +128,20 @@ export function computePeriod(period: Period, entries: Entries, today: string, h
   const elig = Object.values(activities).reduce((s, r) => s + r.eligible, 0);
   const coverage = elig ? round1((Object.values(activities).reduce((s, r) => s + Math.min(r.recorded, r.eligible), 0) / elig) * 100) : 0;
   const dataState: DataState = lifeScore === null ? "NO_DATA" : coverage >= SUFFICIENT_COVERAGE ? "SUFFICIENT_DATA" : "LIMITED_DATA";
-  return { period, list, activities, domains, lifeScore, recordedActivities, coverage, dataState };
+  // Bonus uses the same weights as the base score: domainWeight × activityWeight share × bonus.
+  const dSum = DOMAINS.reduce((s, d) => s + d.weight, 0);
+  const bonusSources: PeriodResult["bonusSources"] = [];
+  for (const d of DOMAINS) {
+    const acts = inDomain(list, d.id);
+    const aSum = acts.reduce((s, a) => s + a.weight, 0);
+    if (!aSum) continue;
+    for (const a of acts) {
+      const b = activities[a.id].bonus;
+      if (b > 0) bonusSources.push({ activityId: a.id, bonus: b, points: round1((b * (a.weight / aSum) * d.weight) / dSum) });
+    }
+  }
+  const lifeBonus = round1(bonusSources.reduce((s, x) => s + x.points, 0));
+  return { period, list, activities, domains, lifeScore, recordedActivities, coverage, dataState, lifeBonus, bonusSources };
 }
 
 /** Coverage (%) a period needs before it is treated as sufficient for comparisons. */

@@ -1,5 +1,6 @@
 // Persistent local-storage abstraction. Raw user input only — never calculated values.
 import { useSyncExternalStore } from "react";
+import { addLog, editLog, removeLog } from "./quantity";
 import { isDomainId, latestVersion, systemHabits, type DomainId, type Frequency, type Habit, type HabitVersion, type InputType } from "./config";
 
 export interface DailyEntry {
@@ -7,9 +8,12 @@ export interface DailyEntry {
   activityId: string;
   value: number | null; // quantitative
   completed: boolean | null; // checklist: null = no data, false = explicitly not done
+  /** Quantitative deltas; when present, `value` is always their sum. */
+  logs?: QuantityLog[];
   createdAt: string;
   updatedAt: string;
 }
+export interface QuantityLog { id: string; value: number; at: string; editedAt?: string }
 export type Entries = Record<string, Record<string, DailyEntry>>; // date -> activityId -> entry
 
 export type GoalStatus = "active" | "completed" | "archived";
@@ -216,15 +220,17 @@ export function replaceState(raw: unknown) {
 const commitListeners = new Set<(s: AppState) => void>();
 export const onCommit = (f: (s: AppState) => void) => { commitListeners.add(f); return () => { commitListeners.delete(f); }; };
 
-function commit(next: AppState, notifySync = true) {
+function commit(next: AppState, notifySync = true): boolean {
   state = next;
+  let saved = true;
   try {
     window.localStorage.setItem(KEY, JSON.stringify(state));
   } catch {
-    /* storage full / unavailable */
+    saved = false; /* storage full / unavailable */
   }
   listeners.forEach((l) => l());
   if (notifySync) commitListeners.forEach((l) => l(state));
+  return saved;
 }
 
 export function getState() {
@@ -263,10 +269,28 @@ export function setEntry(date: string, activityId: string, patch: { value?: numb
     updatedAt: now(),
     ...patch,
   };
+  if (patch.value !== undefined) delete e.logs; // a direct value replaces any delta history
+  else if (prev?.logs) e.logs = prev.logs;
   if (e.value === null && e.completed === null) delete day[activityId];
   else day[activityId] = e;
   commit({ ...s, entries: { ...s.entries, [date]: day } });
 }
+
+// ---------- Quantity logs (incremental deltas) ----------
+/** "duplicate" = same id already saved (double click / retry). */
+export type LogResult = "saved" | "duplicate" | "invalid" | "failed";
+function applyEntries(next: Entries | null, fallback: LogResult): LogResult {
+  if (!next) return fallback;
+  return commit({ ...getState(), entries: next }) ? "saved" : "failed";
+}
+export const addQuantityLog = (date: string, activityId: string, id: string, value: number): LogResult => {
+  if (!(Number.isFinite(value) && value > 0)) return "invalid";
+  return applyEntries(addLog(getState().entries, date, activityId, id, value, now()), "duplicate");
+};
+export const editQuantityLog = (date: string, activityId: string, id: string, value: number): LogResult =>
+  applyEntries(editLog(getState().entries, date, activityId, id, value, now()), "invalid");
+export const deleteQuantityLog = (date: string, activityId: string, id: string): LogResult =>
+  applyEntries(removeLog(getState().entries, date, activityId, id, now()), "invalid");
 
 // ---------- Goals / projects / milestones ----------
 export function saveGoal(g: Partial<Goal> & { title: string; id?: string | undefined }) {

@@ -1,10 +1,11 @@
 import { createFileRoute, Link, useRouterState } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
-import { Check, Minus } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Check, Minus, Pencil, Plus, Trash2 } from "lucide-react";
 import { DOMAINS, activitiesAt, inDomain, type Activity } from "@/lib/awwab/config";
-import { addDays, formatLong } from "@/lib/awwab/dates";
-import { actName, domainName, targetText, unitText, useLang, useT } from "@/lib/awwab/i18n";
-import { setEntry, useAppState, type DailyEntry } from "@/lib/awwab/store";
+import { addDays, formatLong, periodFor } from "@/lib/awwab/dates";
+import { actName, domainName, locale, targetText, unitText, useLang, useT } from "@/lib/awwab/i18n";
+import { addQuantityLog, deleteQuantityLog, editQuantityLog, setEntry, uid, useAppState, type DailyEntry, type QuantityLog } from "@/lib/awwab/store";
+import { entryLogs, logsTotal } from "@/lib/awwab/quantity";
 import { meta, useToday } from "@/lib/awwab/useToday";
 import { PageHeader, Stepper } from "@/components/awwab/ui";
 import { TodayPlan } from "@/components/awwab/Planner";
@@ -89,7 +90,7 @@ function ActivityRow({ a, date, entry }: { a: Activity; date: string; entry: Dai
         <p className="truncate font-semibold">{actName(a, t)}</p>
         <p className="text-xs text-muted-foreground">{targetText(a, t)}</p>
       </div>
-      {a.inputType === "checklist" ? <CheckboxActivity a={a} date={date} entry={entry} /> : <NumericActivity a={a} date={date} entry={entry} />}
+      {a.inputType === "checklist" ? <CheckboxActivity a={a} date={date} entry={entry} /> : <QuantityActivity a={a} date={date} entry={entry} />}
     </li>
   );
 }
@@ -118,35 +119,99 @@ function CheckboxActivity({ a, date, entry }: { a: Activity; date: string; entry
   );
 }
 
-function NumericActivity({ a, date, entry }: { a: Activity; date: string; entry: DailyEntry | undefined }) {
+function QuantityActivity({ a, date, entry }: { a: Activity; date: string; entry: DailyEntry | undefined }) {
   const t = useT();
-  const stored = entry?.value ?? null;
-  const [text, setText] = useState(stored === null ? "" : String(stored));
-  useEffect(() => setText(stored === null ? "" : String(stored)), [stored, date]);
-  const commit = () => {
-    const trimmed = text.trim();
-    if (trimmed === "") return setEntry(date, a.id, { value: null });
-    const n = Number(trimmed);
-    if (Number.isFinite(n) && n >= 0) setEntry(date, a.id, { value: n });
-    else setText(stored === null ? "" : String(stored));
-  };
-  const hit = stored !== null && a.scoring === "daily_threshold" && stored >= a.target;
+  const state = useAppState();
   const unit = unitText(a.unit, t);
+  const [text, setText] = useState("");
+  const [err, setErr] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
+  // One id per pending submission: a double click / retry re-sends the same id and is ignored.
+  const pendingId = useRef<string>(uid());
+  const logs = entryLogs(entry);
+  const dayTotal = logsTotal(logs);
+  // Weekly/monthly quantities progress against their own period target, not each day.
+  const period = a.frequency === "day" ? null : periodFor(a.frequency, date);
+  const total = period
+    ? logsTotal(Object.entries(state.entries).filter(([d]) => d >= period.start && d <= period.end).map(([, m]) => ({ id: "", at: "", value: m[a.id]?.value ?? 0 })))
+    : dayTotal;
+  const pct = a.target > 0 ? Math.round((total / a.target) * 100) : 0;
+  const remaining = Math.max(0, a.target - total);
+  const n = (x: number) => x.toLocaleString(locale());
+  const add = () => {
+    const v = Number(text.trim().replace(",", "."));
+    if (!text.trim() || !Number.isFinite(v) || v <= 0) return setErr(t("qty.invalid"));
+    const r = addQuantityLog(date, a.id, pendingId.current, v);
+    if (r === "failed") return setErr(t("qty.failed"));
+    setErr(null);
+    setText("");
+    pendingId.current = uid();
+  };
   return (
-    <label className="flex items-center gap-2">
-      <input
-        type="number"
-        inputMode="decimal"
-        min={0}
-        value={text}
-        placeholder="—"
-        onChange={(e) => setText(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => e.key === "Enter" && (e.currentTarget as HTMLInputElement).blur()}
-        aria-label={t("daily.inUnit", { act: actName(a, t), unit })}
-        className={`field !w-24 text-right font-bold ${hit ? "!border-sage" : ""}`}
-      />
-      <span className="w-12 truncate text-xs text-muted-foreground">{unit}</span>
-    </label>
+    <div className="col-span-2 space-y-2">
+      <div className="flex items-center gap-2">
+        <input
+          type="number" inputMode="decimal" min={0} value={text} placeholder="+0"
+          onChange={(e) => { setText(e.target.value); setErr(null); }}
+          onKeyDown={(e) => e.key === "Enter" && add()}
+          aria-label={t("daily.inUnit", { act: actName(a, t), unit })}
+          className="field !w-24 text-right font-bold"
+        />
+        <span className="w-12 truncate text-xs text-muted-foreground">{unit}</span>
+        <button type="button" className="btn btn-primary h-9 px-3" onClick={add}><Plus className="h-4 w-4" />{t("qty.add")}</button>
+      </div>
+      <div className="h-2 overflow-hidden rounded-full bg-muted" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
+        <div className={`h-full rounded-full ${pct >= 100 ? "bg-sage" : "bg-orange"}`} style={{ width: `${Math.min(pct, 100)}%` }} />
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-x-3 text-xs text-muted-foreground">
+        <span><b className="text-foreground">{n(total)}</b> / {n(a.target)} {unit} · {pct}%{period ? ` · ${t("qty.thisPeriod." + a.frequency)}` : ""}</span>
+        <span>{remaining > 0 ? t("qty.left", { n: n(remaining), unit }) : t("qty.reached")}</span>
+      </div>
+      {err && <p role="alert" className="text-xs font-bold text-rose">{err}</p>}
+      {logs.length > 0 && (
+        <button type="button" className="text-xs font-bold text-rose hover:underline" onClick={() => setOpen(!open)} aria-expanded={open}>
+          {t("qty.history", { n: logs.length })} {period ? `· ${t("qty.today")} ${n(dayTotal)}` : ""}
+        </button>
+      )}
+      {open && (
+        <ul className="divide-y rounded-md border bg-background text-sm">
+          {logs.map((l) => <LogRow key={l.id} l={l} a={a} date={date} unit={unit} onError={setErr} />)}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function LogRow({ l, a, date, unit, onError }: { l: QuantityLog; a: Activity; date: string; unit: string; onError: (s: string | null) => void }) {
+  const t = useT();
+  const [edit, setEdit] = useState<string | null>(null);
+  const time = l.at ? new Date(l.at).toLocaleTimeString(locale(), { hour: "2-digit", minute: "2-digit" }) : "";
+  const save = () => {
+    const v = Number((edit ?? "").trim().replace(",", "."));
+    if (!Number.isFinite(v) || v <= 0) return onError(t("qty.invalid"));
+    const r = editQuantityLog(date, a.id, l.id, v);
+    if (r === "failed") return onError(t("qty.failed"));
+    onError(null); setEdit(null);
+  };
+  return (
+    <li className="flex items-center gap-2 px-3 py-2">
+      <span className="w-12 text-xs text-muted-foreground">{time}</span>
+      {edit === null ? (
+        <span className="flex-1 font-semibold">+{l.value.toLocaleString(locale())} {unit}</span>
+      ) : (
+        <input type="number" inputMode="decimal" min={0} value={edit} autoFocus onChange={(e) => setEdit(e.target.value)} onKeyDown={(e) => e.key === "Enter" && save()} aria-label={t("qty.editValue")} className="field !h-8 flex-1 text-right" />
+      )}
+      {edit === null ? (
+        <>
+          <button type="button" className="btn btn-ghost h-8 px-2" aria-label={t("qty.edit")} onClick={() => setEdit(String(l.value))}><Pencil className="h-3.5 w-3.5" /></button>
+          <button type="button" className="btn btn-ghost h-8 px-2" aria-label={t("qty.delete")} onClick={() => { if (deleteQuantityLog(date, a.id, l.id) === "failed") onError(t("qty.failed")); }}><Trash2 className="h-3.5 w-3.5" /></button>
+        </>
+      ) : (
+        <>
+          <button type="button" className="btn btn-primary h-8 px-2" onClick={save}>{t("qty.save")}</button>
+          <button type="button" className="btn btn-ghost h-8 px-2" onClick={() => setEdit(null)}>{t("qty.cancel")}</button>
+        </>
+      )}
+    </li>
   );
 }
